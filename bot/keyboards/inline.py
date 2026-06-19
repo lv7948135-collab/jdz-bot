@@ -1,35 +1,8 @@
-from aiogram.types import (
-    InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-)
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-
-def start_keyboard() -> InlineKeyboardMarkup:
-    """Кнопка запуска анализа на экране /start."""
+def consent_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 Вставить результат и получить разбор", callback_data="start_analysis")]
-    ])
-
-
-def rating_keyboard() -> ReplyKeyboardMarkup:
-    """Быстрый выбор рейтинга карточки."""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="⭐ ниже 4.0"), KeyboardButton(text="⭐ 4.0 – 4.5")],
-            [KeyboardButton(text="⭐ 4.5 – 4.8"), KeyboardButton(text="⭐ выше 4.8")],
-            [KeyboardButton(text="Не знаю")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-
-
-def audit_keyboard() -> InlineKeyboardMarkup:
-    """CTA после AI-разбора."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="📋 Заказать полный аудит — 14 900 ₽",
-            url="https://t.me/Vob75?text=АУДИТ"
-        )],
-        [InlineKeyboardButton(text="🔄 Разобрать другой товар", callback_data="start_analysis")]
+        [InlineKeyboardButton(text="✅ Принимаю — продолжить", callback_data="consent_yes")],
+        [InlineKeyboardButton(text="✅✅ Принимаю + согласен на рассылку", callback_data="consent_yes_marketing")],
+        [InlineKeyboardButton(text="❌ Отказываюсь", callback_data="consent_no")],
     ])
