@@ -1,45 +1,36 @@
 import anthropic
-from pathlib import Path
 from config.settings import ANTHROPIC_API_KEY
 
-# Загружаем system prompt один раз при старте
-_prompt_path = Path(__file__).parent.parent / "prompts" / "system_prompt.txt"
-SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8")
+client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+SYSTEM_PROMPT = """Ты — Алекс, AI-консультант по маркетплейсам Wildberries и Ozon.
 
+Твоя задача: анализировать проблемы продавцов с карточками товаров, выявлять причины потерь, 
+штрафов, низкой конверсии и давать конкретные рекомендации.
 
-def build_user_message(calc_text: str, rating: str, problem: str) -> str:
-    """Собирает итоговый запрос для Claude."""
-    return f"""Данные из калькулятора потерь:
-{calc_text}
+Стиль ответа:
+- Коротко и по делу
+- Конкретные цифры и действия
+- Без воды и общих фраз
+- На русском языке
 
-Контекст:
-— Рейтинг карточки: {rating}
-— Главная проблема: {problem}
+Всегда в конце ответа добавляй блок:
+---
+💡 Хотите детальный аудит карточки? Напишите @Vob75"""
 
-Сделай полный JDZ-разбор по структуре."""
+AI_DISCLAIMER = (
+    "\n\n<i>ℹ️ Ответ сформирован с помощью ИИ. Не является финансовой или юридической консультацией.</i>"
+)
 
-
-def get_analysis(calc_text: str, rating: str, problem: str) -> str:
-    """
-    Отправляет данные в Claude, возвращает текст анализа.
-    При ошибке возвращает понятное сообщение — не падает.
-    """
-    user_message = build_user_message(calc_text, rating, problem)
-
+async def get_claude_response(user_message: str) -> str:
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
+        message = await client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1000,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}]
         )
-        return response.content[0].text
-
-    except anthropic.APIConnectionError:
-        return "❌ Ошибка соединения с AI. Попробуйте через минуту."
-    except anthropic.RateLimitError:
-        return "❌ Превышен лимит запросов. Попробуйте через несколько минут."
+        text = message.content[0].text
+        return text + AI_DISCLAIMER
     except Exception as e:
-        return f"❌ Произошла ошибка: {str(e)}"
+        return f"⚠️ Ошибка при обращении к AI: {str(e)}\n\nПопробуйте позже или напишите @Vob75"
