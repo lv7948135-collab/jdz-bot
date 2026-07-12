@@ -1,4 +1,8 @@
 from aiogram import Router
+import sys
+sys.path.append("/root/djavis-os")
+from subscription_service import check_access, record_usage
+import asyncio
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from bot.states import UserStates
@@ -9,6 +13,12 @@ router = Router()
 
 @router.message(UserStates.waiting_question)
 async def handle_question(message: Message, state: FSMContext):
+    decision = await asyncio.to_thread(check_access, message.from_user.id, "alex_ai_analysis")
+    if not decision.allowed:
+        await message.answer(decision.reason)
+        return
+
+    await asyncio.to_thread(record_usage, message.from_user.id)
     await save_message(message.from_user.id, message.text, role="user")
     thinking = await message.answer("🔍 Анализирую вашу ситуацию...")
 
