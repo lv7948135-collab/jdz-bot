@@ -1,10 +1,10 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from bot.states import UserStates
 from bot.keyboards.inline import consent_keyboard
-from db.database import save_consent, delete_user_data
+from db.database import save_consent, delete_user_data, save_bot_start
 
 router = Router()
 
@@ -15,10 +15,10 @@ OWNER_INFO = (
 )
 
 CONSENT_TEXT = (
-    "👋 Привет! Я Алекс — AI-консультант по маркетплейсам WB и Ozon.\n\n"
+    "👋 Привет! Я Алекс — Нейропродавец WB/Ozon.\n\n"
     "Я разбираю экономику карточки и показываю, где товар теряет деньги.\n\n"
     "🧮 Как это работает:\n"
-    "1️⃣ Зайди на калькулятор → https://endearing-starburst-cf8ece.netlify.app/\n"
+    "1️⃣ Зайди на калькулятор → https://frabjous-centaur-3c9e2b.netlify.app/\n"
     "2️⃣ Введи данные товара и нажми «Посчитать потери»\n"
     "3️⃣ Нажми «Скопировать результат»\n"
     "4️⃣ Вернись сюда и нажми кнопку ниже\n\n"
@@ -51,7 +51,17 @@ PRIVACY_TEXT = (
 )
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, command: CommandObject, state: FSMContext):
+    post_code = command.args
+    if post_code and post_code.startswith("post_"):
+        content_item_id = post_code.removeprefix("post_")
+        if content_item_id.isdigit():
+            await save_bot_start(
+                user_id=message.from_user.id,
+                content_item_id=int(content_item_id),
+                post_code=post_code,
+            )
+
     await state.set_state(UserStates.waiting_consent)
     await message.answer(CONSENT_TEXT, reply_markup=consent_keyboard(), parse_mode="HTML")
 

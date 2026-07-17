@@ -18,7 +18,7 @@ async def handle_question(message: Message, state: FSMContext):
         await message.answer(decision.reason)
         return
 
-    await asyncio.to_thread(record_usage, message.from_user.id)
+    await asyncio.to_thread(record_usage, message.from_user.id, "alex_ai_analysis")
     await save_message(message.from_user.id, message.text, role="user")
     thinking = await message.answer("🔍 Анализирую вашу ситуацию...")
 
