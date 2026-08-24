@@ -55,3 +55,51 @@ async def delete_user_data(user_id: int) -> bool:
         await db.execute("DELETE FROM messages WHERE user_id = ?", (user_id,))
         await db.commit()
         return True
+
+
+async def init_metrics_tables() -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS bot_starts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                content_item_id INTEGER NOT NULL,
+                post_code TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, content_item_id)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS reaction_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_item_id INTEGER NOT NULL,
+                chat_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                reactions_json TEXT NOT NULL,
+                reactions_total INTEGER NOT NULL,
+                captured_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.commit()
+    logging.info("✅ Таблицы метрик инициализированы (bot_starts, reaction_snapshots)")
+
+
+async def save_bot_start(user_id: int, content_item_id: int, post_code: str) -> bool:
+    """Сохранить факт запуска бота по deep-link. True — новая запись, False — дубликат."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO bot_starts (user_id, content_item_id, post_code) VALUES (?, ?, ?)",
+            (user_id, content_item_id, post_code),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def save_reaction_snapshot(content_item_id: int, chat_id: int, message_id: int,
+                                  reactions_json: str, reactions_total: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO reaction_snapshots (content_item_id, chat_id, message_id, reactions_json, reactions_total) VALUES (?, ?, ?, ?, ?)",
+            (content_item_id, chat_id, message_id, reactions_json, reactions_total),
+        )
+        await db.commit()
