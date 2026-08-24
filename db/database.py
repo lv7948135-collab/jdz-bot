@@ -88,14 +88,15 @@ async def init_metrics_tables() -> None:
     logging.info("✅ Таблицы метрик инициализированы (bot_starts, reaction_snapshots)")
 
 
-async def save_bot_start(user_id: int, content_item_id: int, post_code: str) -> None:
-    """Сохранить факт запуска бота по deep-link. INSERT OR IGNORE защищает от повторного учёта."""
+async def save_bot_start(user_id: int, content_item_id: int, post_code: str) -> bool:
+    """Сохранить факт запуска бота по deep-link. True — новая запись, False — дубликат."""
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
+        cursor = await db.execute(
             "INSERT OR IGNORE INTO bot_starts (user_id, content_item_id, post_code) VALUES (?, ?, ?)",
             (user_id, content_item_id, post_code),
         )
         await db.commit()
+        return cursor.rowcount > 0
 
 
 async def save_reaction_snapshot(content_item_id: int, chat_id: int, message_id: int, reactions_json: str, reactions_total: int) -> None:

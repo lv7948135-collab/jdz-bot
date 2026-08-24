@@ -1,12 +1,33 @@
+import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from bot.states import UserStates
 from bot.keyboards.inline import consent_keyboard
+from config.settings import ADMIN_CHAT_ID
 from db.database import save_consent, delete_user_data, save_bot_start
 
 router = Router()
+
+
+async def _notify_owner(bot, user_id: int, username: str | None,
+                        post_code: str | None, marketing: bool) -> None:
+    if not ADMIN_CHAT_ID:
+        return
+    try:
+        username_str = f"@{username}" if username else "—"
+        text = (
+            f"🔔 Новый лид\n"
+            f"user_id: {user_id}\n"
+            f"username: {username_str}\n"
+            f"source: {post_code}\n"
+            f"marketing: {'да' if marketing else 'нет'}"
+        )
+        await bot.send_message(int(ADMIN_CHAT_ID), text)
+    except Exception:
+        logging.exception("owner notify failed, ignoring")
+
 
 OWNER_INFO = (
     "Воробьева Любовь Владимировна\n"
@@ -85,12 +106,16 @@ async def consent_yes(callback: CallbackQuery, state: FSMContext):
     await save_consent(callback.from_user.id, callback.from_user.username,
                        callback.from_user.full_name, agreed=True, marketing=False)
     data = await state.get_data()
-    if data.get("pending_post_code"):
-        await save_bot_start(
+    post_code = data.get("pending_post_code")
+    if post_code:
+        inserted = await save_bot_start(
             user_id=callback.from_user.id,
             content_item_id=data["pending_content_item_id"],
-            post_code=data["pending_post_code"],
+            post_code=post_code,
         )
+        if inserted:
+            await _notify_owner(callback.bot, callback.from_user.id,
+                                callback.from_user.username, post_code, marketing=False)
     await state.set_state(UserStates.waiting_question)
     await callback.message.edit_text(
         "✅ Спасибо! Согласие принято.\n\n"
@@ -105,12 +130,16 @@ async def consent_yes_marketing(callback: CallbackQuery, state: FSMContext):
     await save_consent(callback.from_user.id, callback.from_user.username,
                        callback.from_user.full_name, agreed=True, marketing=True)
     data = await state.get_data()
-    if data.get("pending_post_code"):
-        await save_bot_start(
+    post_code = data.get("pending_post_code")
+    if post_code:
+        inserted = await save_bot_start(
             user_id=callback.from_user.id,
             content_item_id=data["pending_content_item_id"],
-            post_code=data["pending_post_code"],
+            post_code=post_code,
         )
+        if inserted:
+            await _notify_owner(callback.bot, callback.from_user.id,
+                                callback.from_user.username, post_code, marketing=True)
     await state.set_state(UserStates.waiting_question)
     await callback.message.edit_text(
         "✅ Спасибо! Согласие принято (включая рассылку).\n\n"
