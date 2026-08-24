@@ -19,6 +19,10 @@ async def handle_question(message: Message, state: FSMContext):
         return
 
     await asyncio.to_thread(record_usage, message.from_user.id, "alex_ai_analysis")
+    if not message.text:
+        await message.answer("Пожалуйста, отправьте вопрос текстовым сообщением.")
+        return
+
     await save_message(message.from_user.id, message.text, role="user")
     thinking = await message.answer("🔍 Анализирую вашу ситуацию...")
 

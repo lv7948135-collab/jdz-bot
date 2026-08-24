@@ -56,10 +56,9 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
     if post_code and post_code.startswith("post_"):
         content_item_id = post_code.removeprefix("post_")
         if content_item_id.isdigit():
-            await save_bot_start(
-                user_id=message.from_user.id,
-                content_item_id=int(content_item_id),
-                post_code=post_code,
+            await state.update_data(
+                pending_post_code=post_code,
+                pending_content_item_id=int(content_item_id),
             )
 
     await state.set_state(UserStates.waiting_consent)
@@ -85,6 +84,13 @@ async def cmd_delete_me(message: Message, state: FSMContext):
 async def consent_yes(callback: CallbackQuery, state: FSMContext):
     await save_consent(callback.from_user.id, callback.from_user.username,
                        callback.from_user.full_name, agreed=True, marketing=False)
+    data = await state.get_data()
+    if data.get("pending_post_code"):
+        await save_bot_start(
+            user_id=callback.from_user.id,
+            content_item_id=data["pending_content_item_id"],
+            post_code=data["pending_post_code"],
+        )
     await state.set_state(UserStates.waiting_question)
     await callback.message.edit_text(
         "✅ Спасибо! Согласие принято.\n\n"
@@ -98,6 +104,13 @@ async def consent_yes(callback: CallbackQuery, state: FSMContext):
 async def consent_yes_marketing(callback: CallbackQuery, state: FSMContext):
     await save_consent(callback.from_user.id, callback.from_user.username,
                        callback.from_user.full_name, agreed=True, marketing=True)
+    data = await state.get_data()
+    if data.get("pending_post_code"):
+        await save_bot_start(
+            user_id=callback.from_user.id,
+            content_item_id=data["pending_content_item_id"],
+            post_code=data["pending_post_code"],
+        )
     await state.set_state(UserStates.waiting_question)
     await callback.message.edit_text(
         "✅ Спасибо! Согласие принято (включая рассылку).\n\n"
