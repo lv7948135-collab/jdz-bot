@@ -22,6 +22,18 @@ import sys
 
 sys.path.append('/root/djavis-os')
 
+# Фразы, явно означающие "возвратов нет" (пользователь осознанно ввёл 0)
+_NO_RETURNS_RE = re.compile(
+    r"(?:"
+    r"возврат\w*\s+нет"
+    r"|нет\s+возврат\w*"
+    r"|без\s+возврат\w*"
+    r"|возврат\w*\s*:?\s*0\b"
+    r"|0\s*%?\s*возврат\w*"
+    r")",
+    re.IGNORECASE,
+)
+
 import ai_engine
 import marketplace_service as ms
 
@@ -61,6 +73,11 @@ _FIELD_PATTERNS = {
 }
 
 REQUIRED_FOR_MARKETPLACE = ("price", "cost_price", "commission_percent")
+
+
+def _has_explicit_no_returns(text: str) -> bool:
+    """True если пользователь явно сообщил, что возвратов нет (0 допустим)."""
+    return bool(_NO_RETURNS_RE.search(text))
 
 
 def _parse_metrics(text: str) -> dict:
@@ -106,6 +123,19 @@ async def get_claude_response(user_message: str) -> str:
     has_enough_data = all(f in metrics for f in REQUIRED_FOR_MARKETPLACE)
 
     if has_enough_data:
+        # CR-01: returns_percent обязателен для точного расчёта.
+        # Допустимо только если пользователь явно указал число ИЛИ явно сказал "нет возвратов".
+        if "returns_percent" not in metrics:
+            if _has_explicit_no_returns(user_message):
+                metrics["returns_percent"] = 0.0
+            else:
+                return (
+                    "Чтобы рассчитать точную юнит-экономику, мне нужен процент возвратов.\n\n"
+                    "Для одежды и обуви на WB это обычно 30–60%.\n"
+                    "Если возвратов практически нет — напишите 0.\n\n"
+                    "Укажите: какой процент возвратов у вашего товара?"
+                )
+
         marketplace_input = ms.MarketplaceInput(
             platform="wb",
             user_request=user_message,
