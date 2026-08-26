@@ -6,8 +6,11 @@ import asyncio
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from bot.states import UserStates
+from bot.keyboards.inline import contact_keyboard
 from ai.claude_client import get_claude_response
 from db.database import save_message
+
+_VERDICT_MARKERS = ("🔴 УБЫТОК", "🟡 НУЛЕВАЯ ПРИБЫЛЬ", "🟢 ПРИБЫЛЬ")
 
 router = Router()
 
@@ -30,4 +33,5 @@ async def handle_question(message: Message, state: FSMContext):
 
     await save_message(message.from_user.id, response, role="assistant")
     await thinking.delete()
-    await message.answer(response, parse_mode="HTML")
+    markup = contact_keyboard() if any(v in response for v in _VERDICT_MARKERS) else None
+    await message.answer(response, parse_mode="HTML", reply_markup=markup)
