@@ -146,6 +146,7 @@ _FIELD_PATTERNS = {
     "logistics": r"(?:логистик[аи])\D{0,3}([\d\s]+[.,]?\d*)",
     "advertising": r"(?:реклам[аы])\D{0,3}([\d\s]+[.,]?\d*)",
     "returns_percent": r"(?:возврат\w*)\D{0,3}([\d\s]+[.,]?\d*)",
+    "sales_volume": r"(?:объём|план|штук|шт\.?)\D{0,5}(\d+)",
 }
 
 REQUIRED_FOR_MARKETPLACE = ("price", "cost_price", "commission_percent")
