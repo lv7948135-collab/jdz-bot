@@ -37,6 +37,82 @@ _NO_RETURNS_RE = re.compile(
 import ai_engine
 import marketplace_service as ms
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Детерминированный pre-filter (без LLM/API).
+# Обрабатывает только узкие однозначные случаи: приветствия, благодарности,
+# запросы о возможностях и статус-запросы.
+#
+# Безопасность обеспечена двумя условиями одновременно:
+# 1. len(user_message) <= _ALEX_MAX_QUICK_LEN — длинные сообщения всегда
+#    уходят в existing path (marketplace или LLM).
+# 2. ТОЧНОЕ совпадение нормализованной строки с frozenset — НЕ подстрока.
+#    Гарантирует: "Привет, почему падает выкуп?" НЕ перехватится.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ALEX_MAX_QUICK_LEN = 60
+
+
+def _alex_normalize(text: str) -> str:
+    """Strip, lowercase, collapse whitespace, remove punctuation."""
+    text = text.strip().lower()
+    text = re.sub(r"[!?.,:;\"'\-]+", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+_ALEX_QUICK_RULES: list[tuple[frozenset, str]] = [
+    (
+        frozenset({
+            "привет", "хай", "hello", "hi",
+            "привет алекс", "алекс привет",
+            "здравствуй", "здравствуйте",
+            "доброе утро", "добрый день", "добрый вечер", "доброй ночи",
+        }),
+        "Привет! Напишите данные вашего товара — цену, себестоимость и комиссию, "
+        "и я сразу рассчитаю юнит-экономику.",
+    ),
+    (
+        frozenset({
+            "спасибо", "спасибо алекс", "алекс спасибо",
+            "спс", "благодарю", "благодарю алекс",
+        }),
+        "Пожалуйста! Если хотите разобрать экономику — просто напишите данные товара.",
+    ),
+    (
+        frozenset({
+            "что ты умеешь", "что умеешь", "что можешь", "чем можешь помочь",
+            "помощь", "/help", "как ты помогаешь", "что ты делаешь",
+        }),
+        (
+            "Я — Алекс, консультант по маркетплейсам WB и Ozon.\n\n"
+            "Что умею:\n"
+            "📊 Рассчитать юнит-экономику (прибыль, маржу, точку безубыточности)\n"
+            "🔵 Дать вердикт: прибыльна ли карточка\n"
+            "📌 Предложить следующий шаг\n\n"
+            "Напишите: цену, себестоимость и комиссию площадки — я сразу посчитаю."
+        ),
+    ),
+    (
+        frozenset({
+            "ты работаешь", "алекс ты работаешь", "работаешь",
+            "ты онлайн", "бот работает", "ты живой", "ты активен",
+        }),
+        "Да, работаю! Напишите данные вашего товара — рассчитаю юнит-экономику.",
+    ),
+]
+
+
+def _alex_quick_reply(user_message: str) -> str | None:
+    """Deterministic pre-filter: возвращает ответ или None → existing path."""
+    if len(user_message) > _ALEX_MAX_QUICK_LEN:
+        return None
+    normalized = _alex_normalize(user_message)
+    for phrases, reply in _ALEX_QUICK_RULES:
+        if normalized in phrases:
+            return reply
+    return None
+
+
 # Старый промпт остаётся здесь для fallback-режима (сценарий 3 выше) —
 # он не удалён, просто больше не единственный путь.
 SYSTEM_PROMPT = """Ты — Алекс, AI-консультант по маркетплейсам WB и Ozon.
@@ -119,6 +195,10 @@ async def get_claude_response(user_message: str) -> str:
     Точка входа, которую вызывает bot/handlers/analysis.py.
     Сигнатура не меняется — хендлер бота трогать не нужно.
     """
+    quick = _alex_quick_reply(user_message)
+    if quick is not None:
+        return quick
+
     metrics = _parse_metrics(user_message)
     has_enough_data = all(f in metrics for f in REQUIRED_FOR_MARKETPLACE)
 
