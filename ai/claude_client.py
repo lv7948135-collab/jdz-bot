@@ -18,6 +18,7 @@ marketplace_service.run() — как того требовал Дмитрий: A
 """
 
 import re
+import sqlite3
 import sys
 
 sys.path.append('/root/djavis-os')
@@ -191,6 +192,97 @@ def _format_marketplace_result(result: ms.MarketplaceResult) -> str:
     return "\n".join(l for l in lines if l)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Knowledge Hub — trusted deterministic layer (0 LLM).
+#
+# Inserted AFTER quick/marketplace routes, BEFORE LLM fallback.
+# Fail-open: any exception or missing data → None → fall through to call_ai().
+# ─────────────────────────────────────────────────────────────────────────────
+
+_KH_DB_PATH = "/root/djavis-os/data/knowledge.db"
+_KH_SEARCH_LIMIT = 3
+
+
+def _kh_extract_field(full_text: str, field: str) -> str:
+    """Extract a named field value from concatenated KH chunk text.
+
+    Handles both single-line fields (FIELD: value) and multiline blocks
+    (FIELD:\\nvalue...\\n\\nNEXT_FIELD:). Returns '' if the field is absent.
+    """
+    m = re.search(
+        r"^" + re.escape(field) + r":\s*\n?(.*?)(?=\n[A-Z_]{2,}:|\Z)",
+        full_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    return m.group(1).strip() if m else ""
+
+
+def _kh_lookup(user_message: str) -> str | None:
+    """Search the DJAVIS Knowledge Hub for a trusted zero-LLM answer.
+
+    Uses knowledge_hub.search() — no raw SQL beyond the document fetch.
+    Returns the canonical_answer string, or None to fall through to LLM.
+
+    Time-sensitivity guard (using KH chunk metadata):
+      TIME_SENSITIVITY: LOW  → evergreen definition   → safe to return
+      TIME_SENSITIVITY: HIGH + CATEGORY: product_offer → owner-confirmed price → safe
+      TIME_SENSITIVITY: HIGH + other category          → fall through (conservative)
+      TIME_SENSITIVITY: unknown                        → fall through (conservative)
+
+    Fail-open: any exception → None, never raises.
+    """
+    try:
+        from modules import knowledge_hub as kh
+
+        conn = sqlite3.connect(_KH_DB_PATH, timeout=2.0)
+        try:
+            hits = kh.search(conn, user_message, limit=_KH_SEARCH_LIMIT)
+            if not hits:
+                return None
+
+            # Find the document that owns the top-ranked chunk.
+            top_chunk_id = hits[0]["content_id"]
+            doc_row = conn.execute(
+                "SELECT document_id FROM knowledge_chunks WHERE id = ?",
+                (top_chunk_id,),
+            ).fetchone()
+            if not doc_row:
+                return None
+
+            doc_id = doc_row[0]
+
+            # Concatenate all chunks (ordered) for full field coverage.
+            # TIME_SENSITIVITY lives in chunk_index=1; CANONICAL_ANSWER in chunk_index=0.
+            chunk_rows = conn.execute(
+                "SELECT chunk_text FROM knowledge_chunks "
+                "WHERE document_id = ? ORDER BY chunk_index",
+                (doc_id,),
+            ).fetchall()
+            if not chunk_rows:
+                return None
+
+            full_text = "\n\n".join(r[0] for r in chunk_rows)
+
+            # Time-sensitivity guard.
+            ts = _kh_extract_field(full_text, "TIME_SENSITIVITY")
+            cat = _kh_extract_field(full_text, "CATEGORY")
+            if ts == "LOW":
+                pass  # evergreen definition — safe
+            elif ts == "HIGH" and cat == "product_offer":
+                pass  # owner-confirmed price — safe
+            else:
+                return None  # unknown or time-sensitive non-product → LLM
+
+            canonical = _kh_extract_field(full_text, "CANONICAL_ANSWER")
+            return canonical if canonical else None
+
+        finally:
+            conn.close()
+
+    except Exception:
+        return None
+
+
 async def get_claude_response(user_message: str) -> str:
     """
     Точка входа, которую вызывает bot/handlers/analysis.py.
@@ -225,5 +317,11 @@ async def get_claude_response(user_message: str) -> str:
         result = await ms.run(marketplace_input)
         return _format_marketplace_result(result)
 
-    # Fallback: цифр недостаточно — работаем как раньше, просто отвечаем текстом
+    # Knowledge Hub: trusted deterministic answer, 0 LLM calls.
+    # Falls through transparently on 0 hits, DB unavailable, or any exception.
+    kh_answer = _kh_lookup(user_message)
+    if kh_answer:
+        return kh_answer
+
+    # LLM fallback: KH had no safe answer.
     return await ai_engine.call_ai(SYSTEM_PROMPT, user_message)
